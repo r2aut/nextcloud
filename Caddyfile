@@ -1,0 +1,34 @@
+{$NEXTCLOUD_DOMAIN:http://localhost:80} {
+    # Настройка максимального размера загружаемого файла (например, до 1 ГБ)
+    request_body * {
+        max_size 1g
+    }
+
+    # Nextcloud будет сильно ругаться в панели администратора, если их не будет
+    header {
+        # Включает HSTS на 1 год, включая поддомены
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+        # Защита от кликджекинга и XSS
+        >X-Content-Type-Options "nosniff"
+        >X-Frame-Options "SAMEORIGIN"
+
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Обязательные редиректы для работы синхронизации контактов и календарей (WebDAV)
+    redir /.well-known/carddav /remote.php/dav/ 301
+    redir /.well-known/caldav /remote.php/dav/ 301
+
+   # ДОБАВЛЕНО: Сжатие ответов (ускоряет загрузку интерфейса и файлов)
+    encode gzip zstd
+
+    # Проксирование всех запросов в контейнер Nextcloud
+    reverse_proxy app:80 {
+        header_up Host {http.request.host}
+        header_up X-Real-IP {http.request.remote.host}
+        header_up X-Forwarded-For {http.request.remote.host}
+        header_up X-Forwarded-Proto {http.request.scheme}
+    }
+
+}

@@ -1,0 +1,107 @@
+services:
+  # --- ОБРАТНЫЙ ПРОКСИ CADDY ---
+  proxy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # Для HTTP/3 (QUIC)
+    environment:
+      - NEXTCLOUD_DOMAIN=${NEXTCLOUD_DOMAIN:-http://localhost:80} # Пробрасываем переменную из .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  # --- БАЗА ДАННЫХ (POSTGRESQL) ---
+  db:
+    image: postgres:16-alpine
+    restart: always
+    shm_size: 256mb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U nextcloud_user -d nextcloud" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- КЭШ И БЛОКИРОВКА ФАЙЛОВ (REDIS) ---
+  redis:
+    image: redis:7-alpine
+    restart: always
+    environment:
+      - REDIS_HOST_PASSWORD=${REDIS_HOST_PASSWORD}
+    command: redis-server --requirepass ${REDIS_HOST_PASSWORD}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_HOST_PASSWORD}", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- ПРИЛОЖЕНИЕ NEXTCLOUD ---
+  app:
+    image: nextcloud:apache
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - nextcloud_core:/var/www/html
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_HOST_PASSWORD=${REDIS_HOST_PASSWORD}
+      - NC_default_phone_region=RU
+      - NEXTCLOUD_ADMIN_USER=admin
+      - NEXTCLOUD_ADMIN_PASSWORD=${NEXTCLOUD_ADMIN_PASSWORD}
+      - TRUSTED_PROXIES=172.16.0.0/12 192.168.0.0/16 10.0.0.0/8
+      - OVERWRITEPROTOCOL=${OVERWRITEPROTOCOL:-http}
+      - OVERWRITECLIURL=${OVERWRITECLIURL:-http://localhost}
+      - PHP_UPLOAD_LIMIT=1G
+      - PHP_MEMORY_LIMIT=512M
+      - NEXTCLOUD_TRUSTED_DOMAINS=${NEXTCLOUD_TRUSTED_DOMAINS:-localhost}
+
+  # --- ПЛАНИРОВЩИК (CRON) ---
+  cron:
+    image: nextcloud:apache
+    restart: always
+    entrypoint: /cron.sh
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - nextcloud_core:/var/www/html
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=nextcloud
+      - POSTGRES_USER=nextcloud_user
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_HOST_PASSWORD=${REDIS_HOST_PASSWORD}
+      - OVERWRITECLIURL=${OVERWRITECLIURL:-http://localhost}
+      - PHP_UPLOAD_LIMIT=1G
+      - PHP_MEMORY_LIMIT=512M
+
+volumes:
+  db_data:
+  redis_data:
+  nextcloud_core:
+  caddy_data:
+  caddy_config:
