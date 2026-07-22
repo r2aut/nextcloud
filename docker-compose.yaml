@@ -97,7 +97,7 @@ services:
       - REDIS_HOST_PASSWORD=${REDIS_HOST_PASSWORD}
       - OVERWRITECLIURL=${OVERWRITECLIURL:-http://localhost}
       - PHP_UPLOAD_LIMIT=1G
-      - PHP_MEMORY_LIMIT=512M
+      - PHP_MEMORY_LIMIT=640M
 
 volumes:
   db_data:
